@@ -1,0 +1,119 @@
+name: Build APK
+on: [push, workflow_dispatch]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Create Full VPN Project
+        run: |
+          echo "include ':app'" > settings.gradle
+          echo "org.gradle.jvmargs=-Xmx2048m
+          android.useAndroidX=true" > gradle.properties
+          mkdir -p app/src/main/java/com/freeconfig/vpn
+          mkdir -p app/src/main
+          mkdir -p gradle/wrapper
+          
+          cat > gradle/wrapper/gradle-wrapper.properties << 'ENDOFFILE'
+          distributionBase=GRADLE_USER_HOME
+          distributionPath=wrapper/dists
+          distributionUrl=https\://services.gradle.org/distributions/gradle-8.4-bin.zip
+          zipStoreBase=GRADLE_USER_HOME
+          zipStorePath=wrapper/dists
+          ENDOFFILE
+          
+          cat > app/build.gradle << 'ENDOFFILE'
+          plugins { id 'com.android.application' id 'org.jetbrains.kotlin.android' }
+          android {
+            namespace 'com.freeconfig.vpn'
+            compileSdk 34
+            defaultConfig { applicationId "com.freeconfig.vpn"; minSdk 24; targetSdk 34; versionCode 1; versionName "1.0" }
+            buildTypes { release { minifyEnabled false } }
+            compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+            kotlinOptions { jvmTarget = '17' }
+          }
+          dependencies {
+            implementation 'androidx.core:core-ktx:1.12.0'
+            implementation 'androidx.appcompat:appcompat:1.6.1'
+            implementation 'com.google.android.material:material:1.11.0'
+            implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
+          }
+          ENDOFFILE
+          
+          cat > app/src/main/AndroidManifest.xml << 'ENDOFFILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+            <uses-permission android:name="android.permission.INTERNET"/>
+            <application android:label="FreeConfig VPN" android:theme="@android:style/Theme.Material.Light">
+              <activity android:name=".MainActivity" android:exported="true">
+                <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+              </activity>
+            </application>
+          </manifest>
+          ENDOFFILE
+          
+          cat > app/src/main/java/com/freeconfig/vpn/MainActivity.kt << 'ENDOFFILE'
+          package com.freeconfig.vpn
+          import android.os.Bundle
+          import android.widget.*
+          import androidx.appcompat.app.AppCompatActivity
+          import kotlinx.coroutines.*
+          import java.net.*
+          import android.content.ClipData
+          import android.content.ClipboardManager
+          enum class VpnType { V2RAY, SHADOWSOCKS, TROJAN }
+          data class VpnConfig(val link: String, val type: VpnType)
+          class MainActivity : AppCompatActivity() {
+            private val configs = mutableListOf<VpnConfig>()
+            private lateinit var statusText: TextView
+            override fun onCreate(savedInstanceState: Bundle?) {
+              super.onCreate(savedInstanceState)
+              val layout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(30,80,30,30) }
+              statusText = TextView(this).apply { text = "FreeConfig VPN - 3 ساختار"; textSize = 18f }
+              val btn1 = Button(this).apply { text = "ساختار 1: V2Ray" }
+              val btn2 = Button(this).apply { text = "ساختار 2: Shadowsocks" }
+              val btn3 = Button(this).apply { text = "ساختار 3: Trojan" }
+              btn1.setOnClickListener { connect(VpnType.V2RAY) }
+              btn2.setOnClickListener { connect(VpnType.SHADOWSOCKS) }
+              btn3.setOnClickListener { connect(VpnType.TROJAN) }
+              layout.addView(statusText); layout.addView(btn1); layout.addView(btn2); layout.addView(btn3)
+              setContentView(layout)
+              fetch()
+            }
+            fun fetch() {
+              statusText.text = "دریافت کانفیگ..."
+              GlobalScope.launch(Dispatchers.IO) {
+                val urls = listOf("https://raw.githubusercontent.com/barry-far/V2ray-Configs/main/Sub1.txt","https://raw.githubusercontent.com/Epodonios/v2ray-configs/main/Splitted-By-Protocol/shadowsocks.txt","https://raw.githubusercontent.com/Epodonios/v2ray-configs/main/Splitted-By-Protocol/trojan.txt")
+                val list = mutableListOf<VpnConfig>()
+                urls.forEach { u -> try{ URL(u).readText().lines().forEach{ l-> if(l.startsWith("vless://")||l.startsWith("vmess://")) list.add(VpnConfig(l,VpnType.V2RAY)); else if(l.startsWith("ss://")) list.add(VpnConfig(l,VpnType.SHADOWSOCKS)); else if(l.startsWith("trojan://")) list.add(VpnConfig(l,VpnType.TROJAN)) } }catch(e:Exception){} }
+                withContext(Dispatchers.Main){ configs.clear(); configs.addAll(list.shuffled().take(150)); statusText.text = "آماده: ${configs.size} کانفیگ" }
+              }
+            }
+            fun connect(t: VpnType) {
+              val c = configs.filter{it.type==t}.randomOrNull() ?: return
+              (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("vpn", c.link))
+              statusText.text = "کپی شد: ${c.link.take(50)}... \nدر v2rayNG پیست کن"
+            }
+          }
+          ENDOFFILE
+          
+          cat > build.gradle << 'ENDOFFILE'
+          task clean(type: Delete) { delete rootProject.buildDir }
+          ENDOFFILE
+
+      - name: Build APK
+        uses: gradle/gradle-build-action@v3
+        with:
+          arguments: assembleDebug
+          gradle-version: 8.4
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: FreeConfigVPN-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
