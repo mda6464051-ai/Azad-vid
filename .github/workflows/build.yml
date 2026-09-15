@@ -10,7 +10,7 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Create Complete Project
+      - name: Create Project Fixed
         run: |
           cat > settings.gradle << 'END'
           pluginManagement {
@@ -30,13 +30,31 @@ jobs:
           include ':app'
           END
           
-          echo "org.gradle.jvmargs=-Xmx2048m
-          android.useAndroidX=true" > gradle.properties
+          echo "org.gradle.jvmargs=-Xmx2048m" > gradle.properties
+          echo "android.useAndroidX=true" >> gradle.properties
           
           mkdir -p app/src/main/java/com/freeconfig/vpn
           mkdir -p app/src/main
           
           cat > app/build.gradle << 'END'
+          plugins {
+            id 'com.android.application' version '8.2.2' apply false
+            id 'org.jetbrains.kotlin.android' version '1.9.22' apply false
+          }
+          // This is needed to apply plugins
+          END
+          
+          cat > build.gradle << 'END'
+          plugins {
+            id 'com.android.application' version '8.2.2' apply false
+            id 'org.jetbrains.kotlin.android' version '1.9.22' apply false
+          }
+          task clean(type: Delete) {
+            delete rootProject.buildDir
+          }
+          END
+          
+          cat > app/build.gradle << 'END2'
           plugins {
             id 'com.android.application'
             id 'org.jetbrains.kotlin.android'
@@ -54,21 +72,12 @@ jobs:
             buildTypes {
               release { minifyEnabled false }
             }
-            compileOptions {
-              sourceCompatibility JavaVersion.VERSION_17
-              targetCompatibility JavaVersion.VERSION_17
-            }
-            kotlinOptions { jvmTarget = '17' }
           }
           dependencies {
             implementation 'androidx.core:core-ktx:1.12.0'
             implementation 'androidx.appcompat:appcompat:1.6.1'
           }
-          END
-          
-          cat > build.gradle << 'END'
-          task clean(type: Delete) { delete rootProject.buildDir }
-          END
+          END2
           
           cat > app/src/main/AndroidManifest.xml << 'END'
           <?xml version="1.0" encoding="utf-8"?>
@@ -91,7 +100,7 @@ jobs:
             override fun onCreate(b: Bundle?) {
               super.onCreate(b)
               val tv = TextView(this)
-              tv.text = "FreeConfig VPN\n\n3 ساختار فعال شد!\nV2Ray + SS + Trojan\n\nبدون سرور - خودکار آپدیت"
+              tv.text = "FreeConfig VPN\n3 ساختار: V2Ray, SS, Trojan\nبدون سرور"
               tv.textSize = 20f
               tv.setPadding(40,200,40,40)
               setContentView(tv)
@@ -103,7 +112,7 @@ jobs:
         run: |
           gradle wrapper --gradle-version 8.4
           chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew assembleDebug --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
